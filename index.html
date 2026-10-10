@@ -235,7 +235,7 @@ html,body{height:100%;background:var(--bg);font-family:var(--fb);font-size:14px;
 </div>
 
 <script type="module">
-import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import{initializeApp,deleteApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import{getDatabase,ref,onValue,set,push,remove}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const INSTR=['Piano','Guitare','Basse','Batterie','Chant','MAO','Éveil','Groupe'];
@@ -404,28 +404,53 @@ function updImpayes(){
 // Firebase
 window.connectFB=()=>{
   const ak=document.getElementById('cfg-ak').value.trim();
-  const dbUrl=document.getElementById('cfg-db').value.trim();
+  let dbUrl=document.getElementById('cfg-db').value.trim().replace(/\/+$/,'');
+  if(dbUrl&&!/^https?:\/\//.test(dbUrl))dbUrl='https://'+dbUrl;
   if(!ak||!dbUrl){document.getElementById('cfg-err').style.display='block';return;}
   const cfg={apiKey:ak,authDomain:document.getElementById('cfg-ad').value.trim(),databaseURL:dbUrl,projectId:document.getElementById('cfg-pi').value.trim(),appId:document.getElementById('cfg-ai').value.trim()};
   localStorage.setItem(LS_KEY,JSON.stringify(cfg));startFB(cfg);
 };
-function startFB(cfg){
+let fbApp=null;
+function showCfgErr(msg){
+  clearTimeout(ltimer);
+  document.getElementById('loader').style.display='none';
+  document.getElementById('setup').style.display='flex';
+  const el=document.getElementById('cfg-err');
+  el.innerHTML='⚠ '+(msg||'Connexion impossible. Vérifiez la Database URL.');
+  el.style.display='block';
+  fillCfg();
+}
+// Pré-remplit le formulaire avec la dernière configuration enregistrée
+function fillCfg(){
+  try{const c=JSON.parse(localStorage.getItem(LS_KEY)||'null');if(!c)return;
+    const set_=(id,v)=>{const e=document.getElementById(id);if(e&&!e.value)e.value=v||'';};
+    set_('cfg-ak',c.apiKey);set_('cfg-ad',c.authDomain);set_('cfg-db',c.databaseURL);set_('cfg-pi',c.projectId);set_('cfg-ai',c.appId);
+  }catch(e){}
+}
+async function startFB(cfg){
   document.getElementById('setup').style.display='none';
+  document.getElementById('cfg-err').style.display='none';
   document.getElementById('loader').style.display='flex';
-  ltimer=setTimeout(()=>{document.getElementById('loader').style.display='none';document.getElementById('setup').style.display='flex';document.getElementById('cfg-err').style.display='block';},12000);
+  ltimer=setTimeout(()=>showCfgErr('Pas de réponse de Firebase. Vérifiez la Database URL (elle doit commencer par https:// et finir par firebasedatabase.app ou firebaseio.com).'),12000);
   try{
-    const app=initializeApp(cfg);db=getDatabase(app);
+    // Une nouvelle tentative doit repartir d'une connexion neuve
+    if(fbApp){try{await deleteApp(fbApp);}catch(e){}fbApp=null;}
+    fbApp=initializeApp(cfg,'emc'+Date.now());db=getDatabase(fbApp);
     onValue(ref(db,DB_PATH),snap=>{
       clearTimeout(ltimer);DB=snap.val()||{};
       document.getElementById('loader').style.display='none';
       document.getElementById('app').style.display='block';
       document.getElementById('sdot').classList.remove('off');
       updImpayes();render();
+    },err=>{
+      const m=String(err&&err.message||err);
+      if(/permission/i.test(m))showCfgErr('Firebase refuse l\'accès (permission_denied). Dans la console Firebase → Realtime Database → onglet <b>Règles</b>, autorisez la lecture et l\'écriture puis cliquez <b>Publier</b>.');
+      else showCfgErr('Erreur Firebase : '+m);
     });
-  }catch(e){clearTimeout(ltimer);document.getElementById('loader').style.display='none';document.getElementById('setup').style.display='flex';document.getElementById('cfg-err').style.display='block';}
+  }catch(e){showCfgErr('Configuration invalide : '+(e&&e.message||e));}
 }
 window.cancelConn=()=>{clearTimeout(ltimer);document.getElementById('loader').style.display='none';document.getElementById('setup').style.display='flex';};
-window.reconf=()=>{document.getElementById('app').style.display='none';document.getElementById('setup').style.display='flex';};
+window.reconf=()=>{document.getElementById('app').style.display='none';document.getElementById('setup').style.display='flex';fillCfg();};
 
 window.demoMode=()=>{
   dm=true;
