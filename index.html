@@ -195,6 +195,19 @@ html,body{height:100%;background:var(--bg);font-family:var(--fb);font-size:14px;
 </div>
 </div>
 
+<div id="login" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;">
+<div class="sc" style="max-width:420px;">
+  <div style="margin-bottom:16px;"><div class="st">Ecole de Musique de Ceyreste</div><div class="ss">Connexion</div></div>
+  <div class="field"><label>Email</label><input id="lg-email" type="email" autocomplete="username" placeholder="vous@exemple.fr"></div>
+  <div class="field"><label>Mot de passe</label><input id="lg-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+  <div id="lg-err" style="color:#991B1B;font-size:12px;margin-top:6px;display:none;"></div>
+  <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:10px;">
+    <button class="btn btn-sm" onclick="reconf()" style="border:none;"><i class="ti ti-settings"></i> Configuration</button>
+    <button class="btn btn-p" id="lg-btn" onclick="doLogin()"><i class="ti ti-login"></i> Se connecter</button>
+  </div>
+</div>
+</div>
+
 <div id="loader" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:12px;">
   <div class="spin"></div>
   <div style="font-size:13px;color:var(--txm);">Connexion en cours…</div>
@@ -222,6 +235,7 @@ html,body{height:100%;background:var(--bg);font-family:var(--fb);font-size:14px;
   <div class="sl" id="sl"></div>
   <div style="padding:7px;border-top:1px solid rgba(240,230,200,.1);">
     <button class="nb2" onclick="reconf()" style="font-size:10px;padding:6px 10px;"><i class="ti ti-settings"></i> Reconfigurer</button>
+    <button class="nb2" onclick="doLogout()" style="font-size:10px;padding:6px 10px;"><i class="ti ti-logout"></i> Se déconnecter</button>
   </div>
 </div>
 <div class="main">
@@ -237,6 +251,7 @@ html,body{height:100%;background:var(--bg);font-family:var(--fb);font-size:14px;
 <script type="module">
 import{initializeApp,deleteApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import{getDatabase,ref,onValue,set,push,remove}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const INSTR=['Piano','Guitare','Basse','Batterie','Chant','MAO','Éveil','Groupe'];
 const MODES=['CB','Virement','Prélèvement','Chèque','Espèces'];
@@ -414,6 +429,7 @@ let fbApp=null;
 function showCfgErr(msg){
   clearTimeout(ltimer);
   document.getElementById('loader').style.display='none';
+  document.getElementById('login').style.display='none';
   document.getElementById('setup').style.display='flex';
   const el=document.getElementById('cfg-err');
   el.innerHTML='⚠ '+(msg||'Connexion impossible. Vérifiez la Database URL.');
@@ -427,6 +443,31 @@ function fillCfg(){
     set_('cfg-ak',c.apiKey);set_('cfg-ad',c.authDomain);set_('cfg-db',c.databaseURL);set_('cfg-pi',c.projectId);set_('cfg-ai',c.appId);
   }catch(e){}
 }
+let auth=null,unsubDB=null,unsubAuth=null;
+function showLogin(msg){
+  clearTimeout(ltimer);
+  ['setup','loader','app'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('login').style.display='flex';
+  const el=document.getElementById('lg-err');
+  if(msg){el.innerHTML='⚠ '+msg;el.style.display='block';}else el.style.display='none';
+  const b=document.getElementById('lg-btn');if(b)b.disabled=false;
+}
+function listenDB(){
+  if(unsubDB){unsubDB();unsubDB=null;}
+  document.getElementById('login').style.display='none';
+  document.getElementById('loader').style.display='flex';
+  unsubDB=onValue(ref(db,DB_PATH),snap=>{
+    clearTimeout(ltimer);DB=snap.val()||{};
+    document.getElementById('loader').style.display='none';
+    document.getElementById('app').style.display='block';
+    document.getElementById('sdot').classList.remove('off');
+    updImpayes();render();
+  },err=>{
+    const m=String(err&&err.message||err);
+    if(/permission/i.test(m))showLogin('Ce compte n\'a pas accès aux élèves (permission_denied). Vérifiez les règles de la Realtime Database dans Firebase.');
+    else showCfgErr('Erreur Firebase : '+m);
+  });
+}
 async function startFB(cfg){
   document.getElementById('setup').style.display='none';
   document.getElementById('cfg-err').style.display='none';
@@ -434,23 +475,37 @@ async function startFB(cfg){
   ltimer=setTimeout(()=>showCfgErr('Pas de réponse de Firebase. Vérifiez la Database URL (elle doit commencer par https:// et finir par firebasedatabase.app ou firebaseio.com).'),12000);
   try{
     // Une nouvelle tentative doit repartir d'une connexion neuve
+    if(unsubDB){unsubDB();unsubDB=null;}
+    if(unsubAuth){unsubAuth();unsubAuth=null;}
     if(fbApp){try{await deleteApp(fbApp);}catch(e){}fbApp=null;}
-    fbApp=initializeApp(cfg,'emc'+Date.now());db=getDatabase(fbApp);
-    onValue(ref(db,DB_PATH),snap=>{
-      clearTimeout(ltimer);DB=snap.val()||{};
-      document.getElementById('loader').style.display='none';
-      document.getElementById('app').style.display='block';
-      document.getElementById('sdot').classList.remove('off');
-      updImpayes();render();
-    },err=>{
-      const m=String(err&&err.message||err);
-      if(/permission/i.test(m))showCfgErr('Firebase refuse l\'accès (permission_denied). Dans la console Firebase → Realtime Database → onglet <b>Règles</b>, autorisez la lecture et l\'écriture puis cliquez <b>Publier</b>.');
-      else showCfgErr('Erreur Firebase : '+m);
+    fbApp=initializeApp(cfg,'emc'+Date.now());db=getDatabase(fbApp);auth=getAuth(fbApp);
+    // Accès aux élèves uniquement après connexion (email + mot de passe)
+    unsubAuth=onAuthStateChanged(auth,user=>{
+      clearTimeout(ltimer);
+      if(user)listenDB();
+      else{if(unsubDB){unsubDB();unsubDB=null;}DB={};showLogin();}
     });
   }catch(e){showCfgErr('Configuration invalide : '+(e&&e.message||e));}
 }
+window.doLogin=async()=>{
+  const email=document.getElementById('lg-email').value.trim();
+  const pass=document.getElementById('lg-pass').value;
+  if(!email||!pass){showLogin('Saisissez votre email et votre mot de passe.');return;}
+  const b=document.getElementById('lg-btn');b.disabled=true;
+  try{await signInWithEmailAndPassword(auth,email,pass);document.getElementById('lg-pass').value='';}
+  catch(e){
+    const c=(e&&e.code)||'';
+    let m='Connexion impossible ('+(c||e.message)+').';
+    if(/invalid-credential|wrong-password|user-not-found|invalid-email|invalid-login/.test(c))m='Email ou mot de passe incorrect.';
+    else if(/operation-not-allowed|configuration-not-found/.test(c))m='La connexion par email n\'est pas activée : dans Firebase → Authentication → Sign-in method, activez « Adresse e-mail/Mot de passe ».';
+    else if(/too-many-requests/.test(c))m='Trop de tentatives. Réessayez dans quelques minutes.';
+    else if(/network/.test(c))m='Pas de connexion internet.';
+    showLogin(m);
+  }
+};
+window.doLogout=async()=>{if(dm){location.reload();return;}if(auth)await signOut(auth);};
 window.cancelConn=()=>{clearTimeout(ltimer);document.getElementById('loader').style.display='none';document.getElementById('setup').style.display='flex';};
-window.reconf=()=>{document.getElementById('app').style.display='none';document.getElementById('setup').style.display='flex';fillCfg();};
+window.reconf=()=>{document.getElementById('app').style.display='none';document.getElementById('login').style.display='none';document.getElementById('setup').style.display='flex';fillCfg();};
 
 window.demoMode=()=>{
   dm=true;
