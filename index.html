@@ -356,28 +356,37 @@ function getMontantDuMois(s,moisKey){
 
 // Répartition en cascade : l'excédent d'un mois couvre le(s) mois suivant(s)
 // Retourne un objet { 'YYYY-MM': { du, paye, reste } } pour tous les mois de l'année
+// Mois auquel un paiement mensuel est rattaché (un seul mois par paiement) :
+// 1) le libellé commence par un mois (« Septembre », « Sep 2026 », « Septembre-Octobre… ») → ce mois de l'année scolaire
+// 2) sinon le mois enregistré (mois_couvert), 3) sinon le mois de la date du paiement
+const sansAccent=t=>(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+function moisDuPaiement(p){
+  const lb=sansAccent(p.label).trim();
+  for(const m of ANNEE_MOIS){
+    const mn=parseInt(m.substring(5,7))-1;
+    if([MN[mn],MS[mn]].some(n=>lb.startsWith(sansAccent(n))))return m;
+  }
+  return p.mois_couvert||mk(p.date);
+}
+// Répartition : chaque paiement couvre d'abord son mois, l'excédent couvre le(s) mois suivant(s)
+// Retourne { 'YYYY-MM': { du, paye, reste } } pour tous les mois de l'année
 function getSoldesMois(s){
-  const pays=(s.paiements||[]).filter(p=>p.type!=='inscription'&&p.type!=='forfait');
-  // Convertir chaque paiement en montant disponible (non encore affecté)
-  // On trie les paiements par date croissante pour affecter chronologiquement
-  const pool=pays.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const pays=(s.paiements||[]).filter(p=>p.type==='abonnement'||!p.type);
+  const parMois={};
+  for(const p of pays){
+    let m=moisDuPaiement(p);
+    if(m<ANNEE_MOIS[0])m=ANNEE_MOIS[0]; // payé avant la rentrée → septembre
+    if(m>ANNEE_MOIS[ANNEE_MOIS.length-1])m=ANNEE_MOIS[ANNEE_MOIS.length-1];
+    parMois[m]=(parMois[m]||0)+(Number(p.montant)||0);
+  }
   let soldeReport=0; // excédent reporté du mois précédent
   const result={};
   for(const mois of ANNEE_MOIS){
     const du=getMontantDuMois(s,mois);
-    if(du<=0){result[mois]={du:0,paye:0,reste:0};continue;}
-    const [y,mo]=mois.split('-');
-    const mn=parseInt(mo)-1;
-    const labelsMois=[MN[mn],MS[mn],MN[mn]+' '+y,MS[mn]+' '+y];
-    // Paiements explicitement liés à ce mois (par date ou libellé)
-    const paiesMois=pool.filter(p=>mk(p.date)===mois||labelsMois.some(l=>p.label&&p.label.toLowerCase().startsWith(l.toLowerCase())));
-    const directPaye=paiesMois.reduce((a,p)=>a+p.montant,0);
-    // Total disponible pour ce mois = paiements directs + report
-    const totalDispo=directPaye+soldeReport;
-    const paye=Math.min(totalDispo,du); // on ne peut pas payer plus que ce qui est dû
-    const exces=totalDispo-du; // excédent = ce qui reste après avoir couvert le mois
-    soldeReport=Math.max(0,exces); // on reporte l'excédent sur le mois suivant
-    result[mois]={du,paye:Math.round(paye*100)/100,reste:Math.round(Math.max(0,du-paye)*100)/100};
+    const totalDispo=(parMois[mois]||0)+soldeReport;
+    const paye=Math.min(totalDispo,Math.max(du,0));
+    soldeReport=Math.max(0,totalDispo-Math.max(du,0));
+    result[mois]=du>0?{du,paye:Math.round(paye*100)/100,reste:Math.round(Math.max(0,du-paye)*100)/100}:{du:0,paye:0,reste:0};
   }
   return result;
 }
@@ -744,14 +753,14 @@ function renderTB(){
       const today2=new Date().toISOString().split('T')[0].substring(0,7);
       const future=mois>today2;
       let statut='',col2='';
-      if(future){statut='';col2='var(--txl)';}
+      if(future&&!(montantPaye>=prixDu&&prixDu>0)){statut='';col2='var(--txl)';}
       else if(montantPaye>=prixDu&&prixDu>0){statut='✓ Réglé';col2='#166534';}
       else if(montantPaye>0&&montantPaye<prixDu){statut='Partiel';col2='#B45309';}
       else if(prixDu>0){statut='Non réglé';col2='#DC2626';}
       return'<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--cr2);">'+
       '<span style="font-size:12px;font-weight:500;min-width:70px;color:var(--bx3);">'+label+'</span>'+
       '<span style="font-size:11px;color:var(--txm);flex:1;">'+(prixDu>0?'Dû : '+prixDu+' €'+(montantPaye>0?' | Payé : '+montantPaye+' €':'')+(reste>0&&!future?' | <b style="color:'+col2+';">Reste : '+reste+' €</b>':''):'—')+'</span>'+
-      (future?'<span style="font-size:10px;color:var(--txl);padding:2px 7px;border-radius:9px;background:var(--cr2);">À venir</span>':
+      (future&&!(montantPaye>=prixDu&&prixDu>0)?'<span style="font-size:10px;color:var(--txl);padding:2px 7px;border-radius:9px;background:var(--cr2);">À venir</span>':
        prixDu>0?'<span style="font-size:10px;font-weight:500;color:'+col2+';padding:2px 7px;border-radius:9px;background:'+(montantPaye>=prixDu?'#DCFCE7':montantPaye>0?'#FEF9C3':'#FEF2F2')+' ;">'+statut+'</span>':'<span style="font-size:10px;color:var(--txl);padding:2px 7px;border-radius:9px;background:var(--cr2);">—</span>')+
       '</div>';
     }).join('')})()+
@@ -851,11 +860,10 @@ function renderAttestation(tb){
 
   // Abonnements impayés
   if(aboCreneaux.length>0){
+    const soldesAtt=getSoldesMois(s);
     for(const mois of moisPasses){
-      const prixDu=getMontantDuMois(s,mois);
+      const {du:prixDu,paye:montantPaye,reste}=soldesAtt[mois]||{du:0,paye:0,reste:0};
       if(prixDu<=0)continue;
-      const montantPaye=pays.filter(p=>p.type==='abonnement'&&(p.mois_couvert||mk(p.date))===mois).reduce((a,p)=>a+p.montant,0);
-      const reste=prixDu-montantPaye;
       const [y2,mo2]=mois.split('-');
       const labelMois=MN[parseInt(mo2)-1]+' '+y2;
       if(montantPaye>=prixDu){
@@ -1172,7 +1180,8 @@ window.addAbonnement=()=>{
     if(lbMo>payMo && (lbMo-payMo)>6) yr=payYear-1; // cas inverse rare
     mois_couvert=yr+'-'+(lbMo<10?'0':'')+lbMo;
   }
-  const p={date:d,montant:m,mode:mo,label:lb,mois_couvert:mois_couvert,type:'abonnement'};
+  const p={date:d,montant:m,mode:mo,label:lb,type:'abonnement'};
+  p.mois_couvert=moisDuPaiement({label:lb,mois_couvert:mois_couvert,date:d});
   if(tireur)(mo==='Virement'?p.titulaire=tireur:p.tireur=tireur);
   s.paiements.push(p);
   s.paiements.sort((a,b)=>a.date.localeCompare(b.date));
