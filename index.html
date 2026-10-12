@@ -256,7 +256,7 @@ import{getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut}from"https:
 const INSTR=['Piano','Guitare','Basse','Batterie','Chant','MAO','Éveil','Groupe'];
 const MODES=['CB','Virement','Prélèvement','Chèque','Espèces'];
 const NIVEAUX=['Débutant','Intermédiaire','Avancé'];
-const TYPE_CRENEAU=['Abonnement Collectif Non-résident','Abonnement Collectif Résident Ceyreste','Abonnement Groupe','Abonnement Individuel','Abonnement Éveil','Forfait Collectif','Forfait Individuel','Forfait Individuel 30min'];
+const TYPE_CRENEAU=['Abonnement Collectif Non-résident','Abonnement Collectif Résident Ceyreste','Abonnement Groupe','Abonnement Individuel','Abonnement Éveil','Forfait Collectif','Forfait Individuel','Forfait Individuel 30min','Autre'];
 const TYPE_DEFAUT='Abonnement Collectif Non-résident';
 const JOURS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 const MC=['#C2185B','#E64A19','#F57C00','#F9A825','#558B2F','#00796B','#0277BD','#1565C0','#4527A0','#6A1B9A','#AD1457','#37474F'];
@@ -268,11 +268,12 @@ const TARIF_ABO={Collectif:70,CollectifResident:68,Groupe:50,Individuel:135,Evei
 const TARIF_ABO_FRATRIE={Collectif:65,CollectifResident:65,Groupe:50,Individuel:125,Eveil:50}; // 2ème élève/matière même famille
 const TARIF_COURS={Collectif:17.5,CollectifResident:17,Groupe:12.5,Individuel:33.75,Eveil:12.5};
 const TARIF_FORFAIT={Collectif:75,Individuel:135,Individuel30:67.5};
-const TYPE_LABEL={Collectif:'Collectif non-résident',CollectifResident:'Collectif résident',Groupe:'Groupe',Individuel:'Individuel',Eveil:'Éveil'};
+const TYPE_LABEL={Collectif:'Collectif non-résident',CollectifResident:'Collectif résident',Groupe:'Groupe',Individuel:'Individuel',Eveil:'Éveil',Autre:'Autre'};
 const FORFAITS=[
   {key:'Collectif',type:'Forfait Collectif',flag:'forfait_collectif',abbr:'C',short:'Coll.',label:'Collectif',pl:'Collectifs',col:'var(--bx)',badgeTx:'var(--cr)',amtTx:'var(--bx3)',okBg:'#DCFCE7',okBd:'#86EFAC',okTx:'#166534',impBg:'#FDE68A',impTx:'#92400E'},
   {key:'Individuel',type:'Forfait Individuel',flag:'forfait_individuel',abbr:'I',short:'Indiv.',label:'Individuel',pl:'Individuels',col:'#6A1B9A',badgeTx:'#fff',amtTx:'#6A1B9A',okBg:'#EDE9FE',okBd:'#C4B5FD',okTx:'#5B21B6',impBg:'#EDE9FE',impTx:'#5B21B6'},
-  {key:'Individuel30',type:'Forfait Individuel 30min',flag:'forfait_individuel30',abbr:'I30',short:'Indiv. 30min',label:'Individuel 30min',pl:'Individuels 30min',col:'#0277BD',badgeTx:'#fff',amtTx:'#0277BD',okBg:'#E0F2FE',okBd:'#7DD3FC',okTx:'#075985',impBg:'#E0F2FE',impTx:'#075985'}
+  {key:'Individuel30',type:'Forfait Individuel 30min',flag:'forfait_individuel30',abbr:'I30',short:'Indiv. 30min',label:'Individuel 30min',pl:'Individuels 30min',col:'#0277BD',badgeTx:'#fff',amtTx:'#0277BD',okBg:'#E0F2FE',okBd:'#7DD3FC',okTx:'#075985',impBg:'#E0F2FE',impTx:'#075985'},
+  {key:'Autre',type:'Autre',flag:'forfait_autre',abbr:'A',short:'Autre',label:'Autre',pl:'Autres',col:'#00695C',badgeTx:'#fff',amtTx:'#00695C',okBg:'#E0F2F1',okBd:'#80CBC4',okTx:'#00695C',impBg:'#E0F2F1',impTx:'#00695C'}
 ];
 const fmtE=n=>String(Math.round(n*100)/100).replace('.',',');
 // Données propres à cette école (ne pas partager avec un autre site)
@@ -306,6 +307,7 @@ function toast(msg,w=false){const t=document.getElementById('toast');t.innerHTML
 
 function getTypeBase(typeCreneau){
   if(!typeCreneau)return'Collectif';
+  if(typeCreneau==='Autre')return'Autre';
   if(typeCreneau.includes('30min'))return'Individuel30';
   if(typeCreneau.includes('Individuel'))return'Individuel';
   if(typeCreneau.includes('Éveil')||typeCreneau.includes('Eveil'))return'Eveil';
@@ -317,13 +319,19 @@ function getTypeBase(typeCreneau){
 function isForfaitCreneau(typeCreneau){
   return typeCreneau&&typeCreneau.startsWith('Forfait');
 }
-function hasForf(s,f){return(s.creneaux||[]).some(c=>c.type_creneau===f.type);}
+// « Autre » : montant saisi à la main, en abonnement mensuel ou en forfait (4 cours)
+const isAutreForfait=c=>c.type_creneau==='Autre'&&!!c.autre_forfait;
+const isForfaitC=c=>isForfaitCreneau(c&&c.type_creneau)||isAutreForfait(c);
+function tarifMensuelC(c){const tb=getTypeBase(c.type_creneau);if(tb==='Autre')return Number(c.montant_autre)||0;return(c.fratrie?TARIF_ABO_FRATRIE[tb]:TARIF_ABO[tb])||70;}
+function tarifCoursC(c){const tb=getTypeBase(c.type_creneau);if(tb==='Autre')return(Number(c.montant_autre)||0)/4;return(c.fratrie?(TARIF_ABO_FRATRIE[tb]||65)/4:TARIF_COURS[tb])||17.5;}
+function hasForf(s,f){return(s.creneaux||[]).some(c=>f.key==='Autre'?isAutreForfait(c):c.type_creneau===f.type);}
+function prixForfait(s,f){if(f.key!=='Autre')return TARIF_FORFAIT[f.key];const c=(s.creneaux||[]).find(isAutreForfait);return c?Number(c.montant_autre)||0:0;}
 const forfaitsDe=s=>FORFAITS.filter(f=>hasForf(s,f));
 
 function getMontantDuMois(s,moisKey){
   const creneaux=s.creneaux||[];
   const aboCreneaux=creneaux.filter(c=>{
-    if(isForfaitCreneau(c.type_creneau))return false;
+    if(isForfaitC(c))return false;
     if(!c.date_fin)return true; // pas de date_fin → toujours actif
     // Normaliser : extraire année et mois quelle que soit la forme stockée
     const dfRaw=c.date_fin.substring(0,7); // "2026-09" ou "2026-9"
@@ -335,9 +343,8 @@ function getMontantDuMois(s,moisKey){
   if(!aboCreneaux.length)return 0;
   let total=0;
   for(const c of aboCreneaux){
-    const typeBase=getTypeBase(c.type_creneau);
-    const tarifMensuel=(c.fratrie?TARIF_ABO_FRATRIE[typeBase]:TARIF_ABO[typeBase])||70;
-    const tarifCours=(c.fratrie?(TARIF_ABO_FRATRIE[typeBase]||65)/4:TARIF_COURS[typeBase])||17.5;
+    const tarifMensuel=tarifMensuelC(c);
+    const tarifCours=tarifCoursC(c);
     if(c.premier_mois&&c.premier_mois===moisKey&&c.nb_cours_premier_mois!=null){
       total+=Math.round(c.nb_cours_premier_mois*tarifCours*100)/100;
     } else {
@@ -384,7 +391,7 @@ function getImpayes(){
 
     // ── IMPAYÉS ABONNEMENT ──
     const moisImpayes=[];
-    const aboCreneaux=(s.creneaux||[]).filter(c=>!isForfaitCreneau(c.type_creneau));
+    const aboCreneaux=(s.creneaux||[]).filter(c=>!isForfaitC(c));
     if(aboCreneaux.length>0){
       const moisPasses=ANNEE_MOIS.filter(m=>m<=today);
       const soldes=getSoldesMois(s);
@@ -401,7 +408,7 @@ function getImpayes(){
       const nF=pres.filter(p=>p.statut==='present'&&p[f.flag]===true).length;
       const fp=pays.filter(p=>p.type==='forfait'&&p.type_cours===f.key).length;
       const impF=Math.max(0,Math.floor(nF/4)-fp);
-      for(let i=0;i<impF;i++) forfaitImpayes.push({tranche:fp+i+1,prix:TARIF_FORFAIT[f.key],typeBase:f.key,f});
+      for(let i=0;i<impF;i++) forfaitImpayes.push({tranche:fp+i+1,prix:prixForfait(s,f),typeBase:f.key,f});
     }
 
     const hi=(s.inscription_status||'unpaid')==='unpaid';
@@ -602,7 +609,7 @@ function renderTB(){
   if(ct==='fiche'){
     const profs=(s.professeurs||[]);const cren=(s.creneaux||[]);
     tb.innerHTML=
-    '<div class="blk"><div class="bh"><i class="ti ti-id-badge" style="color:var(--bx);"></i><span class="bht">Identité</span></div><div class="bb"><div class="r2"><div class="field"><label>Prénom</label><input value="'+(s.prenom||'')+'" onchange="uf(\u0027prenom\u0027,this.value)"></div><div class="field"><label>Nom</label><input value="'+(s.nom||'')+'" onchange="uf(\u0027nom\u0027,this.value)"></div></div><div class="r2" style="margin-top:8px;"><div class="field"><label>Date de naissance</label><input type="date" value="'+(s.dob||'')+'" onchange="uf(\u0027dob\u0027,this.value)"></div><div class="field"><label>Niveau</label><select onchange="uf(\u0027niveau\u0027,this.value)">'+NIVEAUX.map(n=>'<option'+(s.niveau===n?' selected':'')+'>'+n+'</option>').join('')+'</select></div></div><div class="field" style="margin-top:8px;"><label>Adresse</label><input value="'+(s.adresse||'')+'" onchange="uf(\u0027adresse\u0027,this.value)"></div></div></div>'+
+    '<div class="blk"><div class="bh"><i class="ti ti-id-badge" style="color:var(--bx);"></i><span class="bht">Identité</span></div><div class="bb"><div class="r2"><div class="field"><label>Prénom</label><input value="'+(s.prenom||'')+'" onchange="uf(\u0027prenom\u0027,this.value)"></div><div class="field"><label>Nom</label><input value="'+(s.nom||'')+'" onchange="uf(\u0027nom\u0027,this.value)"></div></div><div class="r2" style="margin-top:8px;"><div class="field"><label>Date de naissance</label><input type="date" value="'+(s.dob||'')+'" min="1920-01-01" max="'+new Date().toISOString().split('T')[0]+'" onchange="ufDate(\u0027dob\u0027,this.value)"></div><div class="field"><label>Niveau</label><select onchange="uf(\u0027niveau\u0027,this.value)">'+NIVEAUX.map(n=>'<option'+(s.niveau===n?' selected':'')+'>'+n+'</option>').join('')+'</select></div></div><div class="field" style="margin-top:8px;"><label>Adresse</label><input value="'+(s.adresse||'')+'" onchange="uf(\u0027adresse\u0027,this.value)"></div></div></div>'+
     '<div class="blk"><div class="bh"><i class="ti ti-phone" style="color:var(--bx);"></i><span class="bht">Contacts</span></div><div class="bb">'+
     '<div class="sl2"><i class="ti ti-guitar-pick"></i> Musicien</div><div class="r2"><div class="field"><label>📱 Tél. musicien</label><input value="'+(s.tel_musicien||'')+'" placeholder="06 ..." onchange="uf(\u0027tel_musicien\u0027,this.value)"></div><div class="field"><label>✉️ Mail musicien</label><input value="'+(s.email_musicien||'')+'" placeholder="musicien@..." onchange="uf(\u0027email_musicien\u0027,this.value)"></div></div>'+
     '<div class="dv"></div><div class="sl2"><i class="ti ti-heart"></i> Parents</div><div class="r2"><div class="field"><label>📱 Tél. maman</label><input value="'+(s.tel_maman||'')+'" placeholder="06 ..." onchange="uf(\u0027tel_maman\u0027,this.value)"></div><div class="field"><label>📱 Tél. papa</label><input value="'+(s.tel_papa||'')+'" placeholder="06 ..." onchange="uf(\u0027tel_papa\u0027,this.value)"></div></div><div class="r2" style="margin-top:8px;"><div class="field"><label>✉️ Mail maman</label><input value="'+(s.email_maman||'')+'" placeholder="maman@..." onchange="uf(\u0027email_maman\u0027,this.value)"></div><div class="field"><label>✉️ Mail papa</label><input value="'+(s.email_papa||'')+'" placeholder="papa@..." onchange="uf(\u0027email_papa\u0027,this.value)"></div></div>'+
@@ -616,11 +623,12 @@ function renderTB(){
     (cren.length?cren.map((c,i)=>{
       const tc2=c.type_creneau||TYPE_DEFAUT;
       const typeBase2=getTypeBase(tc2);
-      const isForf=isForfaitCreneau(tc2);
-      const tarifLabel=isForf?fmtE(TARIF_FORFAIT[typeBase2]||75)+' €/forfait (4 cours)':((c.fratrie?TARIF_ABO_FRATRIE[typeBase2]:TARIF_ABO[typeBase2])||70)+' €/mois'+(c.fratrie?' 💜':'');
+      const isAutre=typeBase2==='Autre';
+      const isForf=isForfaitC(c);
+      const tarifLabel=isForf?fmtE(isAutre?(Number(c.montant_autre)||0):(TARIF_FORFAIT[typeBase2]||75))+' €/forfait (4 cours)':fmtE(tarifMensuelC(c))+' €/mois'+(c.fratrie?' 💜':'');
       const premMois=c.premier_mois||'';
       const nbCoursPM=c.nb_cours_premier_mois!=null?c.nb_cours_premier_mois:'';
-      const tarifCours2=(c.fratrie?(TARIF_ABO_FRATRIE[typeBase2]||65)/4:TARIF_COURS[typeBase2])||17.5;
+      const tarifCours2=tarifCoursC(c);
       const prorataCalc=nbCoursPM!==''?(Math.round(nbCoursPM*tarifCours2*100)/100)+' €':'—';
       return'<div class="cren-row" style="background:var(--cr);border:1px solid var(--cr2);border-radius:var(--rad2);padding:10px 12px;margin-bottom:8px;">'+
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">'+
@@ -634,15 +642,19 @@ function renderTB(){
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'+
       '<select onchange="updC('+i+',\u0027type_creneau\u0027,this.value)" style="flex:1;min-width:160px;">'+TYPE_CRENEAU.map(t=>'<option'+(tc2===t?' selected':'')+'>'+t+'</option>').join('')+'</select>'+
       '<span style="font-size:11px;color:var(--txm);background:var(--cr2);padding:3px 8px;border-radius:9px;">'+tarifLabel+'</span>'+
-      (!isForf?'<button class="btn btn-sm" onclick="togFratrie('+i+')" style="'+(c.fratrie?'background:#1E40AF;color:#fff;border-color:#1E40AF;':'')+'"><i class="ti ti-heart-handshake"></i> '+(c.fratrie?'Fratrie '+TARIF_ABO_FRATRIE[typeBase2]+'€':'Plein tarif')+'</button>':'')+
+      (!isForf&&!isAutre?'<button class="btn btn-sm" onclick="togFratrie('+i+')" style="'+(c.fratrie?'background:#1E40AF;color:#fff;border-color:#1E40AF;':'')+'"><i class="ti ti-heart-handshake"></i> '+(c.fratrie?'Fratrie '+TARIF_ABO_FRATRIE[typeBase2]+'€':'Plein tarif')+'</button>':'')+
       '</div>'+
+      (isAutre?'<div style="margin-top:8px;background:#E0F2F1;border:1px solid #80CBC4;border-radius:var(--rad3);padding:8px 10px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">'+
+      '<div class="field" style="width:120px;margin:0;"><label style="font-size:10px;">Montant (€)</label><input type="number" min="0" step="0.01" value="'+(c.montant_autre!=null?c.montant_autre:'')+'" placeholder="ex: 60" onchange="updCAutre('+i+',this.value)" style="font-size:11px;"></div>'+
+      '<div class="field" style="flex:1;min-width:160px;margin:0;"><label style="font-size:10px;">Type de paiement</label><select onchange="updC('+i+',\u0027autre_forfait\u0027,this.value===\u00271\u0027)" style="font-size:11px;"><option value="0"'+(!c.autre_forfait?' selected':'')+'>Abonnement mensuel</option><option value="1"'+(c.autre_forfait?' selected':'')+'>Forfait (4 cours)</option></select></div>'+
+      '</div>':'')+
       (!isForf?'<div style="margin-top:8px;background:#FFF9C4;border:1px solid #F9A825;border-radius:var(--rad3);padding:8px 10px;"><div style="font-size:11px;font-weight:500;color:#795548;margin-bottom:6px;">⚡ Prorata premier mois (optionnel)</div>'+
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;">'+
       '<div class="field" style="flex:1;min-width:110px;"><label style="font-size:10px;">Mois d\u0027inscription</label><input type="month" value="'+premMois+'" onchange="updC('+i+',\u0027premier_mois\u0027,this.value)" style="font-size:11px;"></div>'+
       '<div class="field" style="width:90px;"><label style="font-size:10px;">Nb de cours</label><input type="number" value="'+nbCoursPM+'" min="1" max="4" placeholder="ex: 2" onchange="updCPM('+i+',this.value)" style="font-size:11px;"></div>'+
       '<div style="font-size:12px;font-weight:500;color:var(--bx3);padding-bottom:6px;">= '+prorataCalc+'</div>'+
       '</div></div><div style="margin-top:8px;background:#FEE2E2;border:1px solid #FCA5A5;border-radius:var(--rad3);padding:8px 10px;"><div style="font-size:11px;font-weight:500;color:#DC2626;margin-bottom:6px;"><i class="ti ti-calendar-x"></i> Arrêt (optionnel)</div>'+
-      '<div style="display:flex;align-items:center;gap:8px;"><div class="field" style="flex:1;"><label style="font-size:10px;">Arrêt à partir de (1er mois non dû)</label><input type="month" value="'+(c.date_fin||'')+'" oninput="updC('+i+',\'date_fin\',this.value)" style="font-size:11px;"></div>'+
+      '<div style="display:flex;align-items:center;gap:8px;"><div class="field" style="flex:1;"><label style="font-size:10px;">Arrêt à partir de (1er mois non dû)</label><input type="month" value="'+(c.date_fin||'')+'" onchange="updC('+i+',\'date_fin\',this.value)" style="font-size:11px;"></div>'+
       '<div style="font-size:10px;color:var(--txm);padding-bottom:4px;">À partir du mois suivant, ce créneau n\'est plus compté.</div></div></div>':'')+'</div>';
     }).join(''):'<div style="font-size:12px;color:var(--txl);padding:4px 0 8px;">Aucun créneau.</div>')+
     '<button class="btn btn-sm" onclick="addC()"><i class="ti ti-plus"></i> Ajouter un créneau</button>'+
@@ -660,7 +672,7 @@ function renderTB(){
     let html='';
     // ── UN BLOC PAR TYPE DE FORFAIT ──
     for(const f of forfs){
-      const prix=fmtE(TARIF_FORFAIT[f.key]);
+      const prix=fmtE(prixForfait(s,f));
       const presF=pres.filter(p=>p.statut==='present'&&p[f.flag]===true);
       const nF=presF.length;
       const fp=pays.filter(p=>p.type==='forfait'&&p.type_cours===f.key);
@@ -707,7 +719,7 @@ function renderTB(){
     '<button class="btn btn-p btn-sm" onclick="addPres()"><i class="ti ti-plus"></i> Ajouter</button></div></div></div>';
 
   } else if(ct==='reglement'){
-    const aboCreneaux=(s.creneaux||[]).filter(c=>!isForfaitCreneau(c.type_creneau));
+    const aboCreneaux=(s.creneaux||[]).filter(c=>!isForfaitC(c));
     const tousLesEncaissements=pays.filter(p=>p.type!=='inscription').reduce((a,p)=>a+p.montant,0);
     const tI=pays.filter(p=>p.type==='inscription').reduce((a,p)=>a+p.montant,0);
     const ins=s.inscription_status||'unpaid';
@@ -723,7 +735,7 @@ function renderTB(){
     // ── ABONNEMENTS MENSUELS ──
     (aboCreneaux.length?
     '<div class="blk"><div class="bh"><i class="ti ti-calendar-repeat" style="color:var(--bx);"></i><span class="bht">Abonnements mensuels</span>'+
-    '<span style="margin-left:auto;font-size:10px;color:var(--txm);">'+aboCreneaux.map(c=>{const tb2=getTypeBase(c.type_creneau);return'<span style="background:var(--bx);color:var(--cr);padding:1px 7px;border-radius:7px;margin-left:4px;">'+(TYPE_LABEL[tb2]||tb2)+' '+(c.fratrie?TARIF_ABO_FRATRIE[tb2]:TARIF_ABO[tb2])+'€'+(c.fratrie?' (fratrie)':'')+'</span>';}).join('')+'</span>'+
+    '<span style="margin-left:auto;font-size:10px;color:var(--txm);">'+aboCreneaux.map(c=>{const tb2=getTypeBase(c.type_creneau);return'<span style="background:var(--bx);color:var(--cr);padding:1px 7px;border-radius:7px;margin-left:4px;">'+(TYPE_LABEL[tb2]||tb2)+' '+fmtE(tarifMensuelC(c))+'€'+(c.fratrie?' (fratrie)':'')+'</span>';}).join('')+'</span>'+
     '</div><div class="bb">'+
     (()=>{const _sol=getSoldesMois(s);return ANNEE_MOIS.map(mois=>{
       const {du:prixDu,paye:montantPaye,reste}=_sol[mois]||{du:0,paye:0,reste:0};
@@ -768,7 +780,7 @@ function renderTB(){
 
     // ── FORFAITS (un bloc par type) ──
     forfaitsDe(s).map(f=>{
-      const prix=fmtE(TARIF_FORFAIT[f.key]);
+      const prix=fmtE(prixForfait(s,f));
       const sfx='-'+f.key;
       const allF=pays.filter(pp=>pp.type==='forfait'&&pp.type_cours===f.key);
       return'<div class="blk"><div class="bh"><i class="ti ti-ticket" style="color:'+f.col+';"></i><span class="bht">Forfaits '+f.pl+'</span><span style="margin-left:auto;font-size:10px;padding:2px 9px;border-radius:9px;background:'+f.col+';color:'+f.badgeTx+';font-weight:500;">'+prix+' €</span></div><div class="bb">'+
@@ -824,7 +836,7 @@ function renderAttestation(tb){
 
   // Calcul des sommes dues
   const moisPasses=ANNEE_MOIS.filter(m=>m<=today.substring(0,7));
-  const aboCreneaux=creneaux.filter(c=>!isForfaitCreneau(c.type_creneau));
+  const aboCreneaux=creneaux.filter(c=>!isForfaitC(c));
   const inscStatus=s.inscription_status||'unpaid';
   const inscPayee=inscStatus==='paid'||inscStatus==='offert';
   const inscOffert=inscStatus==='offert';
@@ -862,7 +874,7 @@ function renderAttestation(tb){
     const fp=pays.filter(p=>p.type==='forfait'&&p.type_cours===f.key).length;
     const nbForf=Math.ceil(nF/4);
     for(let i=0;i<nbForf;i++){
-      lignes.push({mois:null,label:'Forfait 4 cours '+f.label+' n°'+(i+1),montant:TARIF_FORFAIT[f.key],paye:i<fp,type:'forf'+f.abbr});
+      lignes.push({mois:null,label:'Forfait 4 cours '+f.label+' n°'+(i+1),montant:prixForfait(s,f),paye:i<fp,type:'forf'+f.abbr});
     }
   }
 
@@ -1090,6 +1102,9 @@ window.selS=id=>{cid=id;cv='detail';ct='fiche';render();const b=document.getElem
 window.selSP=id=>{cid=id;cv='detail';ct='reglement';render();};
 window.showV=v=>{cv=v;cid=null;render();};
 window.setTab=t=>{ct=t;const d=document.getElementById('mc');if(d&&cid)renderDetail(d);else if(d)render();};
+// Une année tapée chiffre par chiffre passe par 0002, 0020, 0201… : on attend une année complète
+const anneeIncomplete=v=>!!v&&parseInt(v.substring(0,4),10)<1900;
+window.ufDate=(f,v)=>{if(anneeIncomplete(v))return;uf(f,v);};
 window.uf=(f,v)=>{if(!cid||!DB[cid])return;DB[cid][f]=v;save(cid,DB[cid]);renderSB();};
 window.togI=i=>{const s=DB[cid];if(!s)return;const a=s.instruments||[];const x=a.indexOf(i);if(x>-1)a.splice(x,1);else a.push(i);s.instruments=a;save(cid,s);renderTB();};
 window.togGratuit=()=>{const s=DB[cid];if(!s)return;s.gratuit=!s.gratuit;save(cid,s);updImpayes();renderDetail(document.getElementById('mc'));toast(s.gratuit?'Gratuité activée ✓':'Gratuité désactivée');};
@@ -1098,7 +1113,8 @@ window.rmP=i=>{const s=DB[cid];if(!s)return;(s.professeurs||[]).splice(i,1);save
 window.updP=(i,f,v)=>{const s=DB[cid];if(!s||!s.professeurs||!s.professeurs[i])return;s.professeurs[i][f]=v;save(cid,s);};
 window.addC=()=>{const s=DB[cid];if(!s)return;if(!s.creneaux)s.creneaux=[];s.creneaux.push({jour:'Lundi',debut:'',fin:'',matiere:'',type_creneau:TYPE_DEFAUT});save(cid,s);renderTB();};
 window.rmC=i=>{const s=DB[cid];if(!s)return;(s.creneaux||[]).splice(i,1);save(cid,s);renderTB();};
-window.updC=(i,f,v)=>{const s=DB[cid];if(!s||!s.creneaux||!s.creneaux[i])return;s.creneaux[i][f]=v;save(cid,s);renderTB();};
+window.updCAutre=(i,v)=>{const s=DB[cid];if(!s||!s.creneaux||!s.creneaux[i])return;s.creneaux[i].montant_autre=v===''?null:parseFloat(v);save(cid,s);updImpayes();renderTB();};
+window.updC=(i,f,v)=>{if(typeof v==='string'&&/^\d{4}-\d/.test(v)&&anneeIncomplete(v))return;const s=DB[cid];if(!s||!s.creneaux||!s.creneaux[i])return;s.creneaux[i][f]=v;save(cid,s);renderTB();};
 window.updCPM=(i,v)=>{const s=DB[cid];if(!s||!s.creneaux||!s.creneaux[i])return;s.creneaux[i].nb_cours_premier_mois=v===''?null:parseFloat(v);save(cid,s);renderTB();};
 window.togP=i=>{const s=DB[cid];if(!s)return;const p=(s.presences||[])[i];if(!p)return;p.statut=p.statut==='present'?'absent':'present';save(cid,s);renderDetail(document.getElementById('mc'));};
 // togPF : coche/décoche le forfait (Collectif / Individuel / Individuel 30min) d'une séance
@@ -1167,9 +1183,10 @@ window.addForfaitType=(typeCours)=>{
   const d=document.getElementById('pd'+sfx).value;
   const mo=document.getElementById('pm'+sfx).value;
   const lb=document.getElementById('pl'+sfx).value||'Forfait 4 cours '+((FORFAITS.find(f=>f.key===typeCours)||{}).label||typeCours);
-  const px=TARIF_FORFAIT[typeCours]||75;
   const tireur=(document.getElementById('pt'+sfx)||{}).value||'';
   if(!d)return;const s=DB[cid];if(!s)return;
+  const fT=FORFAITS.find(f=>f.key===typeCours);
+  const px=fT?prixForfait(s,fT):75;
   if(!s.paiements)s.paiements=[];
   const p={date:d,montant:px,mode:mo,label:lb,type:'forfait',type_cours:typeCours};
   if(tireur)(mo==='Virement'?p.titulaire=tireur:p.tireur=tireur);
@@ -1229,18 +1246,23 @@ function exportVCF(id){
   vcf+='ORG:Ecole de Musique de Ceyreste\n';
   vcf+='NOTE:'+(s.instruments||[]).join(', ')+' - '+(s.niveau||'')+'\n';
   vcf+='END:VCARD';
+  const url=URL.createObjectURL(new Blob([vcf],{type:'text/vcard;charset=utf-8'}));
   const a=document.createElement('a');
-  a.href='data:text/vcard;charset=utf-8,'+encodeURIComponent(vcf);
-  a.download=s.prenom+'_'+s.nom+'.vcf';
-  a.click();
+  a.href=url;a.download=(s.prenom||'')+'_'+(s.nom||'')+'.vcf';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
   toast('Contact exporté !');
 }
+window.exportVCF=exportVCF;
 
 // ── SMS ──
 function getNums(s){
   return[s.tel_maman,s.tel_papa,s.tel_musicien].filter(Boolean).map(t=>t.replace(/\s/g,'')).join(',');
 }
 
+window.closeM=()=>document.getElementById('mw').classList.remove('op');
+document.getElementById('mw').addEventListener('click',e=>{if(e.target.id==='mw')closeM();});
+window.openSMS=id=>openSMS(id);
 function openSMS(id){
   const s=DB[id];if(!s)return;
   const imp=getImpayes().find(x=>x.id===id);
