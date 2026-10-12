@@ -328,15 +328,22 @@ function hasForf(s,f){return(s.creneaux||[]).some(c=>f.key==='Autre'?isAutreForf
 function prixForfait(s,f){if(f.key!=='Autre')return TARIF_FORFAIT[f.key];const c=(s.creneaux||[]).find(isAutreForfait);return c?Number(c.montant_autre)||0:0;}
 const forfaitsDe=s=>FORFAITS.filter(f=>hasForf(s,f));
 
+function normMois(v){
+  if(!v)return'';
+  const t=sansAccent(String(v)).trim();
+  let m=t.match(/^(\d{4})-(\d{1,2})/);if(m)return m[1]+'-'+m[2].padStart(2,'0');
+  m=t.match(/^(\d{1,2})[\/.\- ](\d{4})$/);if(m)return m[2]+'-'+m[1].padStart(2,'0');
+  for(const k of ANNEE_MOIS){const mn=parseInt(k.substring(5,7))-1;if([MN[mn],MS[mn]].some(n=>t.startsWith(sansAccent(n))))return k;}
+  return'';
+}
+const moisLabel=k=>{if(!k)return'';const[y,m]=k.split('-');return MN[parseInt(m)-1]+' '+y;};
+const selectMois=(val,onch)=>'<select onchange="'+onch+'" style="font-size:11px;"><option value="">— Choisir —</option>'+ANNEE_MOIS.map(k=>'<option value="'+k+'"'+(normMois(val)===k?' selected':'')+'>'+moisLabel(k)+'</option>').join('')+'</select>';
 function getMontantDuMois(s,moisKey){
   const creneaux=s.creneaux||[];
   const aboCreneaux=creneaux.filter(c=>{
     if(isForfaitC(c))return false;
-    if(!c.date_fin)return true; // pas de date_fin → toujours actif
-    // Normaliser : extraire année et mois quelle que soit la forme stockée
-    const dfRaw=c.date_fin.substring(0,7); // "2026-09" ou "2026-9"
-    const [dy,dm]=dfRaw.split('-');
-    const dfNorm=dy+'-'+(dm||'').padStart(2,'0'); // → toujours "YYYY-MM"
+    const dfNorm=normMois(c.date_fin);
+    if(!dfNorm)return true; // pas de date_fin → toujours actif
     if(moisKey<dfNorm)return true; // moisKey avant l'arrêt → actif
     return false; // moisKey >= date_fin → créneau arrêté
   });
@@ -345,7 +352,7 @@ function getMontantDuMois(s,moisKey){
   for(const c of aboCreneaux){
     const tarifMensuel=tarifMensuelC(c);
     const tarifCours=tarifCoursC(c);
-    if(c.premier_mois&&c.premier_mois===moisKey&&c.nb_cours_premier_mois!=null){
+    if(c.premier_mois&&normMois(c.premier_mois)===moisKey&&c.nb_cours_premier_mois!=null&&!isNaN(c.nb_cours_premier_mois)){
       total+=Math.round(c.nb_cours_premier_mois*tarifCours*100)/100;
     } else {
       total+=tarifMensuel;
@@ -647,7 +654,7 @@ function renderTB(){
       '<input type="time" value="'+(c.fin||'')+'" style="width:72px;" onchange="updC('+i+',\u0027fin\u0027,this.value)">'+
       '<input value="'+(c.matiere||'')+'" placeholder="Matière" style="flex:1;min-width:80px;" onchange="updC('+i+',\u0027matiere\u0027,this.value)">'+
       '<button class="btn btn-sm btn-del" onclick="rmC('+i+')"><i class="ti ti-x"></i></button></div>'+
-      (c.date_fin?'<div style="margin-top:4px;display:flex;align-items:center;gap:6px;"><span style="font-size:10px;font-weight:500;color:#DC2626;background:#FEE2E2;padding:2px 8px;border-radius:9px;"><i class="ti ti-calendar-x"></i> Arrêté le '+c.date_fin+'</span><button class="btn btn-sm" onclick="updC('+i+',\'date_fin\',\'\')" style="font-size:10px;padding:2px 7px;">Rétablir</button></div>':'')+
+      (c.date_fin?'<div style="margin-top:4px;display:flex;align-items:center;gap:6px;"><span style="font-size:10px;font-weight:500;color:#DC2626;background:#FEE2E2;padding:2px 8px;border-radius:9px;"><i class="ti ti-calendar-x"></i> Arrêté à partir de '+(moisLabel(normMois(c.date_fin))||c.date_fin)+'</span><button class="btn btn-sm" onclick="updC('+i+',\'date_fin\',\'\')" style="font-size:10px;padding:2px 7px;">Rétablir</button></div>':'')+
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'+
       '<select onchange="updC('+i+',\u0027type_creneau\u0027,this.value)" style="flex:1;min-width:160px;">'+TYPE_CRENEAU.map(t=>'<option'+(tc2===t?' selected':'')+'>'+t+'</option>').join('')+'</select>'+
       '<span style="font-size:11px;color:var(--txm);background:var(--cr2);padding:3px 8px;border-radius:9px;">'+tarifLabel+'</span>'+
@@ -659,11 +666,11 @@ function renderTB(){
       '</div>':'')+
       (!isForf?'<div style="margin-top:8px;background:#FFF9C4;border:1px solid #F9A825;border-radius:var(--rad3);padding:8px 10px;"><div style="font-size:11px;font-weight:500;color:#795548;margin-bottom:6px;">⚡ Prorata premier mois (optionnel)</div>'+
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;">'+
-      '<div class="field" style="flex:1;min-width:110px;"><label style="font-size:10px;">Mois d\u0027inscription</label><input type="month" value="'+premMois+'" onchange="updC('+i+',\u0027premier_mois\u0027,this.value)" style="font-size:11px;"></div>'+
+      '<div class="field" style="flex:1;min-width:110px;"><label style="font-size:10px;">Mois d\u0027inscription</label>'+selectMois(premMois,'updC('+i+',\u0027premier_mois\u0027,this.value)')+'</div>'+
       '<div class="field" style="width:90px;"><label style="font-size:10px;">Nb de cours</label><input type="number" value="'+nbCoursPM+'" min="1" max="4" placeholder="ex: 2" onchange="updCPM('+i+',this.value)" style="font-size:11px;"></div>'+
       '<div style="font-size:12px;font-weight:500;color:var(--bx3);padding-bottom:6px;">= '+prorataCalc+'</div>'+
       '</div></div><div style="margin-top:8px;background:#FEE2E2;border:1px solid #FCA5A5;border-radius:var(--rad3);padding:8px 10px;"><div style="font-size:11px;font-weight:500;color:#DC2626;margin-bottom:6px;"><i class="ti ti-calendar-x"></i> Arrêt (optionnel)</div>'+
-      '<div style="display:flex;align-items:center;gap:8px;"><div class="field" style="flex:1;"><label style="font-size:10px;">Arrêt à partir de (1er mois non dû)</label><input type="month" value="'+(c.date_fin||'')+'" onchange="updC('+i+',\'date_fin\',this.value)" style="font-size:11px;"></div>'+
+      '<div style="display:flex;align-items:center;gap:8px;"><div class="field" style="flex:1;"><label style="font-size:10px;">Arrêt à partir de (1er mois non dû)</label>'+selectMois(c.date_fin,'updC('+i+',\u0027date_fin\u0027,this.value)')+'</div>'+
       '<div style="font-size:10px;color:var(--txm);padding-bottom:4px;">À partir du mois suivant, ce créneau n\'est plus compté.</div></div></div>':'')+'</div>';
     }).join(''):'<div style="font-size:12px;color:var(--txl);padding:4px 0 8px;">Aucun créneau.</div>')+
     '<button class="btn btn-sm" onclick="addC()"><i class="ti ti-plus"></i> Ajouter un créneau</button>'+
