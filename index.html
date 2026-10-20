@@ -339,6 +339,9 @@ function normMois(v){
 const moisLabel=k=>{if(!k)return'';const[y,m]=k.split('-');return MN[parseInt(m)-1]+' '+y;};
 const selectMois=(val,onch)=>'<select onchange="'+onch+'" style="font-size:11px;"><option value="">— Choisir —</option>'+ANNEE_MOIS.map(k=>'<option value="'+k+'"'+(normMois(val)===k?' selected':'')+'>'+moisLabel(k)+'</option>').join('')+'</select>';
 function getMontantDuMois(s,moisKey){
+  // montant dû saisi à la main pour ce mois (onglet Règlements)
+  const perso=s.du_perso&&s.du_perso[moisKey];
+  if(perso!=null&&perso!==''&&!isNaN(perso))return Number(perso);
   const creneaux=s.creneaux||[];
   const aboCreneaux=creneaux.filter(c=>{
     if(isForfaitC(c))return false;
@@ -367,18 +370,21 @@ function getMontantDuMois(s,moisKey){
 // 1) le libellé commence par un mois (« Septembre », « Sep 2026 », « Septembre-Octobre… ») → ce mois de l'année scolaire
 // 2) sinon le mois enregistré (mois_couvert), 3) sinon le mois de la date du paiement
 const sansAccent=t=>(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-function moisDuPaiement(p){
-  const lb=sansAccent(p.label).trim();
+function moisDuLibelle(label){
+  const lb=sansAccent(label).trim();
   for(const m of ANNEE_MOIS){
     const mn=parseInt(m.substring(5,7))-1;
     if([MN[mn],MS[mn]].some(n=>lb.startsWith(sansAccent(n))))return m;
   }
-  return p.mois_couvert||mk(p.date);
+  return'';
 }
+function moisDuPaiement(p){return moisDuLibelle(p.label)||p.mois_couvert||mk(p.date);}
+// Paiement compté pour les abonnements : paiement mensuel, ou « autre règlement » dont le libellé commence par un mois
+const estPaiementMensuel=p=>p.type==='abonnement'||!p.type||(p.type==='autre'&&!!moisDuLibelle(p.label));
 // Répartition : chaque paiement couvre d'abord son mois, l'excédent couvre le(s) mois suivant(s)
 // Retourne { 'YYYY-MM': { du, paye, reste } } pour tous les mois de l'année
 function getSoldesMois(s){
-  const pays=(s.paiements||[]).filter(p=>p.type==='abonnement'||!p.type);
+  const pays=(s.paiements||[]).filter(estPaiementMensuel);
   const parMois={};
   for(const p of pays){
     let m=moisDuPaiement(p);
@@ -766,15 +772,15 @@ function renderTB(){
       else if(prixDu>0){statut='Non réglé';col2='#DC2626';}
       return'<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--cr2);">'+
       '<span style="font-size:12px;font-weight:500;min-width:70px;color:var(--bx3);">'+label+'</span>'+
-      '<span style="font-size:11px;color:var(--txm);flex:1;">'+(prixDu>0?'Dû : '+prixDu+' €'+(montantPaye>0?' | Payé : '+montantPaye+' €':'')+(reste>0&&!future?' | <b style="color:'+col2+';">Reste : '+reste+' €</b>':''):'—')+'</span>'+
+      '<span style="font-size:11px;color:var(--txm);flex:1;">'+'<button class="btn btn-sm" title="Saisir le montant dû" onclick="editDu(\u0027'+mois+'\u0027)" style="padding:1px 6px;margin-right:6px;"><i class="ti ti-pencil"></i></button>'+(s.du_perso&&s.du_perso[mois]!=null?'<span style="font-size:10px;color:#1E5AA8;margin-right:4px;">(saisi)</span>':'')+(prixDu>0?'Dû : '+fmtE(prixDu)+' €'+(montantPaye>0?' | Payé : '+montantPaye+' €':'')+(reste>0&&!future?' | <b style="color:'+col2+';">Reste : '+reste+' €</b>':''):'—')+'</span>'+
       (future&&!(montantPaye>=prixDu&&prixDu>0)?'<span style="font-size:10px;color:var(--txl);padding:2px 7px;border-radius:9px;background:var(--cr2);">À venir</span>':
        prixDu>0?'<span style="font-size:10px;font-weight:500;color:'+col2+';padding:2px 7px;border-radius:9px;background:'+(montantPaye>=prixDu?'#DCFCE7':montantPaye>0?'#FEF9C3':'#FEF2F2')+' ;">'+statut+'</span>':'<span style="font-size:10px;color:var(--txl);padding:2px 7px;border-radius:9px;background:var(--cr2);">—</span>')+
       '</div>';
     }).join('')})()+
-    (pays.filter(p=>p.type!=='inscription'&&p.type!=='forfait').length?
+    (pays.filter(estPaiementMensuel).length?
     '<div class="sl2" style="margin-top:12px;">Règlements enregistrés</div>'+
-    pays.filter(p=>p.type!=='inscription'&&p.type!=='forfait').slice().reverse().map((p,ri)=>{
-      const allAbo=pays.filter(pp=>pp.type!=='inscription'&&pp.type!=='forfait');
+    pays.filter(estPaiementMensuel).slice().reverse().map((p,ri)=>{
+      const allAbo=pays.filter(estPaiementMensuel);
       const origIdx=pays.indexOf(allAbo[allAbo.length-1-ri]);
       const bm=p.mode==='CB'?'bc':p.mode==='Espèces'?'be':p.mode==='Virement'||p.mode==='Prélèvement'?'bv':'bq';
       const tireurTxt=(p.tireur||p.titulaire)?'<span style="font-size:10px;color:var(--txl);margin-left:4px;">'+(p.tireur?'✎ '+p.tireur:p.titulaire?'↔ '+p.titulaire:'')+'</span>':'';
@@ -815,7 +821,7 @@ function renderTB(){
 
     // AUTRES RÈGLEMENTS
     '<div class="blk"><div class="bh"><i class="ti ti-receipt" style="color:var(--bx);"></i><span class="bht">Autres règlements</span></div><div class="bb">'+
-    (pays.filter(p=>p.type==='autre').length?pays.filter(p=>p.type==='autre').map(p=>{const idx=mi(p.date);const bm=p.mode==='CB'?'bc':p.mode==='Espèces'?'be':p.mode==='Virement'||p.mode==='Prélèvement'?'bv':'bq';const tireurTxt=(p.tireur||p.titulaire)?'<span style="font-size:10px;color:var(--txl);margin-left:4px;">'+(p.tireur?'✎ '+p.tireur:p.titulaire?'↔ '+p.titulaire:'')+'</span>':'';return'<div class="payr"><div class="mdot" style="background:'+MC[idx]+'"></div><span style="font-size:12px;font-weight:500;color:var(--bx3);min-width:78px;">'+fd(p.date)+'</span><span style="font-size:12px;color:var(--txm);flex:1;">'+p.label+tireurTxt+'</span><span class="badge '+bm+'">'+p.mode+'</span><span style="font-weight:500;font-size:13px;color:var(--bx3);min-width:55px;text-align:right;">'+p.montant+' €</span><button class="btn btn-sm btn-del" onclick="rmPay('+pays.indexOf(p)+')" style="margin-left:3px;"><i class="ti ti-x"></i></button></div>';}).join(''):'<div style="color:var(--txl);font-size:12px;padding:4px 0;">Aucun autre règlement.</div>')+
+    (pays.filter(p=>p.type==='autre'&&!estPaiementMensuel(p)).length?pays.filter(p=>p.type==='autre'&&!estPaiementMensuel(p)).map(p=>{const idx=mi(p.date);const bm=p.mode==='CB'?'bc':p.mode==='Espèces'?'be':p.mode==='Virement'||p.mode==='Prélèvement'?'bv':'bq';const tireurTxt=(p.tireur||p.titulaire)?'<span style="font-size:10px;color:var(--txl);margin-left:4px;">'+(p.tireur?'✎ '+p.tireur:p.titulaire?'↔ '+p.titulaire:'')+'</span>':'';return'<div class="payr"><div class="mdot" style="background:'+MC[idx]+'"></div><span style="font-size:12px;font-weight:500;color:var(--bx3);min-width:78px;">'+fd(p.date)+'</span><span style="font-size:12px;color:var(--txm);flex:1;">'+p.label+tireurTxt+'</span><span class="badge '+bm+'">'+p.mode+'</span><span style="font-weight:500;font-size:13px;color:var(--bx3);min-width:55px;text-align:right;">'+p.montant+' €</span><button class="btn btn-sm btn-del" onclick="rmPay('+pays.indexOf(p)+')" style="margin-left:3px;"><i class="ti ti-x"></i></button></div>';}).join(''):'<div style="color:var(--txl);font-size:12px;padding:4px 0;">Aucun autre règlement.</div>')+
     '<hr class="sep"><div class="r2" style="gap:8px;"><div class="field"><label>Date</label><input type="date" id="pad" value="'+new Date().toISOString().split('T')[0]+'"></div><div class="field"><label>Montant (€)</label><input type="number" id="pam" placeholder="0" min="0"></div><div class="field"><label>Mode</label><select id="pamode" onchange="togTireur(\u0027pax\u0027,this.value)">'+MODES.map(m=>'<option>'+m+'</option>').join('')+'</select></div><div class="field"><label>Libellé</label><input id="pal" placeholder="Matériel..."></div></div>'+
     '<div id="pax" style="display:none;margin-top:6px;"><div class="field"><label id="pax-lbl">Nom du tireur</label><input id="pat" placeholder="Nom Prénom"></div></div>'+
     '<button class="btn btn-sm" style="margin-top:8px;" onclick="addAutre()"><i class="ti ti-plus"></i> Ajouter</button></div></div>';
@@ -1146,6 +1152,18 @@ window.addPres=()=>{
 };
 window.rmPay=i=>{const s=DB[cid];if(!s)return;(s.paiements||[]).splice(i,1);save(cid,s);updImpayes();renderDetail(document.getElementById('mc'));};
 window.rmPayByType=(type,typeCours,idx)=>{const s=DB[cid];if(!s)return;const list=s.paiements.filter(p=>p.type===type&&p.type_cours===typeCours);if(!list[idx])return;const i=s.paiements.indexOf(list[idx]);(s.paiements||[]).splice(i,1);save(cid,s);updImpayes();renderDetail(document.getElementById('mc'));};
+window.editDu=mois=>{
+  const s=DB[cid];if(!s)return;
+  const [y,mo]=mois.split('-');
+  const actuel=getMontantDuMois(s,mois);
+  const v=prompt('Montant dû pour '+MN[parseInt(mo)-1]+' '+y+' (en €)\nLaissez vide pour revenir au tarif normal.',s.du_perso&&s.du_perso[mois]!=null?String(s.du_perso[mois]).replace('.',','):String(actuel).replace('.',','));
+  if(v===null)return;
+  const t=v.trim().replace(',','.');
+  if(!s.du_perso)s.du_perso={};
+  if(t===''){delete s.du_perso[mois];}
+  else{const n=parseFloat(t);if(isNaN(n)||n<0){toast('Montant invalide',true);return;}s.du_perso[mois]=n;}
+  save(cid,s);updImpayes();renderDetail(document.getElementById('mc'));
+};
 window.updAboMontant=()=>{
   const dateEl=document.getElementById('pabd');
   const montEl=document.getElementById('pabmont');
