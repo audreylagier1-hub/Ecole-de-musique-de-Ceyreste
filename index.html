@@ -75,6 +75,18 @@ html,body{height:100%;background:var(--bg);font-family:var(--fb);font-size:14px;
 .na{margin:5px 8px 0;border-radius:var(--rad2);background:var(--gr);border:1px solid var(--gr);color:var(--cr);font-size:12px;padding:7px 11px;cursor:pointer;display:flex;align-items:center;gap:7px;font-family:var(--fb);width:calc(100% - 16px);transition:all .12s;}
 .na:hover{background:var(--gr2);}
 .sl{flex:1;overflow-y:auto;padding:4px 0;}
+.srch{margin:8px 8px 2px;display:flex;align-items:center;gap:6px;background:rgba(221,242,232,.1);border:1px solid rgba(221,242,232,.2);border-radius:var(--rad2);padding:0 8px;}
+.srch i{color:rgba(221,242,232,.6);font-size:14px;}
+.srch input{flex:1;min-width:0;background:none;border:none;outline:none;color:var(--cr);font-size:12px;font-family:var(--fb);padding:7px 0;}
+.srch input::placeholder{color:rgba(221,242,232,.45);}
+.srch button{background:none;border:none;color:rgba(221,242,232,.6);cursor:pointer;font-size:13px;padding:2px;}
+.rt{width:100%;border-collapse:collapse;font-size:12px;}
+.rt th{text-align:right;font-weight:500;color:var(--txm);font-size:11px;padding:6px 8px;border-bottom:1.5px solid var(--cr2);white-space:nowrap;}
+.rt td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--cr2);white-space:nowrap;}
+.rt th:first-child,.rt td:first-child{text-align:left;}
+.rt tr.tot td{font-weight:600;color:var(--bx3);border-top:2px solid var(--bx3);border-bottom:none;}
+.rt td.z{color:var(--txl);}
+.rtw{overflow-x:auto;}
 .si{padding:8px 13px;cursor:pointer;border-bottom:1px solid rgba(221,242,232,.06);display:flex;align-items:center;gap:8px;transition:background .1s;position:relative;}
 .si:hover{background:rgba(221,242,232,.06);}
 .si.act{background:var(--bx);}
@@ -232,6 +244,7 @@ html,body{height:100%;background:var(--bg);font-family:var(--fb);font-size:14px;
     <button class="nb2" onclick="showV('stats')" id="n-stats"><i class="ti ti-chart-bar"></i> Statistiques</button>
     <button class="na" onclick="openAdd()"><i class="ti ti-user-plus"></i> Nouvel élève</button>
   </div>
+  <div class="srch"><i class="ti ti-search"></i><input id="srch" placeholder="Rechercher un élève…" autocomplete="off" oninput="setRecherche(this.value)" onkeydown="if(event.key==='Enter')ouvrirPremierResultat();if(event.key==='Escape')setRecherche('')"><button id="srch-x" onclick="setRecherche('')" style="display:none;" title="Effacer"><i class="ti ti-x"></i></button></div>
   <div class="sl" id="sl"></div>
   <div style="padding:7px;border-top:1px solid rgba(221,242,232,.1);">
     <button class="nb2" onclick="reconf()" style="font-size:10px;padding:6px 10px;"><i class="ti ti-settings"></i> Reconfigurer</button>
@@ -302,6 +315,23 @@ const fd=d=>{if(!d)return'';const[y,m,j]=d.split('-');return j+'/'+m+'/'+y;};
 const mi=d=>d?parseInt(d.substring(5,7))-1:0;
 const mk=d=>d?d.substring(0,7):'';
 let showInactifs=false;
+let recherche='';
+// Recherche sur le prénom et/ou le nom, sans tenir compte des accents ni des majuscules
+function correspond(s){
+  const mots=sansAccent(recherche).trim().split(/\s+/).filter(Boolean);
+  if(!mots.length)return true;
+  const n=sansAccent((s.prenom||'')+' '+(s.nom||''));
+  return mots.every(w=>n.includes(w));
+}
+const resultatsRecherche=()=>Object.entries(DB).filter(([,s])=>correspond(s)).sort(([,a],[,b])=>(!!a.inactif-!!b.inactif)||(a.prenom||'').localeCompare(b.prenom||'')||(a.nom||'').localeCompare(b.nom||''));
+window.setRecherche=v=>{
+  recherche=v||'';
+  const inp=document.getElementById('srch');if(inp&&inp.value!==recherche)inp.value=recherche;
+  const x=document.getElementById('srch-x');if(x)x.style.display=recherche?'block':'none';
+  renderSB();
+  if(cv==='liste')renderListe(document.getElementById('mc'));
+};
+window.ouvrirPremierResultat=()=>{const r0=resultatsRecherche()[0];if(r0&&recherche.trim())selS(r0[0]);};
 const sorted=()=>Object.entries(DB).filter(([,s])=>showInactifs?s.inactif:!s.inactif).sort(([,a],[,b])=>(a.prenom||'').localeCompare(b.prenom||'')||(a.nom||'').localeCompare(b.nom||''));
 function toast(msg,w=false){const t=document.getElementById('toast');t.innerHTML=(w?'<i class="ti ti-alert-triangle"></i>':'<i class="ti ti-check"></i>')+' '+msg;t.className='toast'+(w?' warn':'');t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
 
@@ -555,40 +585,50 @@ function render(){
   const ta=document.getElementById('ta'),mc=document.getElementById('mc'),tt=document.getElementById('tt');
   const n=sorted().length;
   document.getElementById('nb-txt').textContent=n+' élève'+(n>1?'s':'');
-  if(cv==='impayes'){document.getElementById('n-imp').classList.add('act');tt.textContent='Impayés';ta.innerHTML='';renderImp(mc);}
+  if(cv==='impayes'){document.getElementById('n-imp').classList.add('act');tt.textContent='Impayés';ta.innerHTML='<button class="btn btn-p btn-sm" onclick="openSMSGroupes()"><i class="ti ti-messages"></i> SMS groupés</button>';renderImp(mc);}
   else if(cv==='stats'){document.getElementById('n-stats').classList.add('act');tt.textContent='Tableau de bord';ta.innerHTML='';renderStats(mc);}
   else if(cv==='detail'&&cid&&DB[cid]){tt.textContent=DB[cid].prenom+' '+DB[cid].nom;ta.innerHTML='<button class="btn btn-sm" onclick="exportVCF(\u0027'+cid+'\u0027)" ><i class="ti ti-address-book"></i> Contact</button><button class="btn btn-sm" onclick="openSMS(\u0027'+cid+'\u0027)" ><i class="ti ti-message"></i> SMS</button><button class="btn btn-del btn-sm" onclick="delStudent(\u0027'+cid+'\u0027)"><i class="ti ti-trash"></i> Supprimer</button>';renderDetail(mc);}
-  else{document.getElementById('n-liste').classList.add('act');tt.textContent='Liste des élèves';ta.innerHTML='<button class="btn btn-p btn-sm" onclick="openAdd()"><i class="ti ti-user-plus"></i> Nouvel élève</button><button class="btn btn-sm" onclick="showInactifs=!showInactifs;render()" style="'+(showInactifs?'background:#374151;color:#fff;border-color:#374151;':'')+'"><i class="ti ti-users-group"></i> '+(showInactifs?'Voir actifs':'Anciens élèves')+'</button>';renderListe(mc);}
+  else{document.getElementById('n-liste').classList.add('act');tt.textContent='Liste des élèves';ta.innerHTML='<button class="btn btn-p btn-sm" onclick="openAdd()"><i class="ti ti-user-plus"></i> Nouvel élève</button><button class="btn btn-sm" onclick="openSMSGroupes()"><i class="ti ti-messages"></i> SMS groupés</button><button class="btn btn-sm" onclick="showInactifs=!showInactifs;render()" style="'+(showInactifs?'background:#374151;color:#fff;border-color:#374151;':'')+'"><i class="ti ti-users-group"></i> '+(showInactifs?'Voir actifs':'Anciens élèves')+'</button>';renderListe(mc);}
 }
 
+// Heure de cours la plus tôt de l'élève pour un jour donné (pour trier chaque jour)
+function heureJour(s,j){const h=(s.creneaux||[]).filter(c=>c.jour===j&&c.debut).map(c=>c.debut).sort();return h[0]||'99:99';}
+function siHTML(id,s,ids,sous){
+  return'<div class="si'+(cid===id?' act':'')+'" onclick="selS(\''+id+'\')"><div class="av" style="background:'+avc(id)+'22;color:'+avc(id)+'">'+gi(s)+'</div><div style="overflow:hidden;flex:1;"><div class="sn">'+s.prenom+' '+(s.nom||'')+'</div><div class="sm">'+(sous!=null?sous:((s.instruments||[]).slice(0,2).join(', ')))+'</div></div>'+(ids.has(id)?'<div class="udot"></div>':'')+'</div>';
+}
 function renderSB(){
   const JORD=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+  const ids=new Set(getImpayes().map(x=>x.id));
+  let html='';
+  if(recherche.trim()){
+    // Recherche : liste à plat de tous les élèves (actifs et anciens) qui correspondent
+    const res=resultatsRecherche();
+    html='<div class="sg-day-hd" style="cursor:default;"><i class="ti ti-search"></i><span>Résultats ('+res.length+')</span></div>'+
+    (res.length?res.map(([id,s])=>siHTML(id,s,ids,((s.instruments||[]).slice(0,2).join(', '))+(s.inactif?' · ancien élève':''))).join(''):'<div style="padding:10px 13px;font-size:11px;color:rgba(221,242,232,.5);">Aucun élève trouvé.</div>');
+    document.getElementById('sl').innerHTML=html;updImpayes();return;
+  }
   const groups={};
-  const eleves=sorted();
-  eleves.forEach(([id,s])=>{
+  sorted().forEach(([id,s])=>{
     const jours=[...new Set((s.creneaux||[]).map(c=>c.jour).filter(Boolean))];
     if(!jours.length){if(!groups['__none__'])groups['__none__']=[];groups['__none__'].push([id,s]);}
     else jours.forEach(j=>{if(!groups[j])groups[j]=[];if(!groups[j].find(([i])=>i===id))groups[j].push([id,s]);});
   });
-  const ids=new Set(getImpayes().map(x=>x.id));
-  let html='';
+  const jourHTML=(key,titre,liste)=>{
+    const isOpen=(cid&&liste.find(([i])=>i===cid))||false;
+    return'<div class="sg-day"><div class="sg-day-hd" onclick="togDay(\''+key+'\')"><i class="ti ti-chevron-'+(isOpen?'down':'right')+'" id="chev-'+key+'"></i><span>'+titre+' ('+liste.length+')</span></div><div class="sg-day-body" id="day-'+key+'" style="display:'+(isOpen?'block':'none')+';">'+
+    liste.map(([id,s])=>{
+      if(key==='__none__')return siHTML(id,s,ids);
+      const h=heureJour(s,key);
+      return siHTML(id,s,ids,(h!=='99:99'?h.replace(':','h')+' · ':'')+((s.instruments||[]).slice(0,2).join(', ')));
+    }).join('')+'</div></div>';
+  };
   JORD.forEach(j=>{
     if(!groups[j]||!groups[j].length)return;
-    const isOpen=(cid&&groups[j].find(([i])=>i===cid))||false;
-    html+='<div class="sg-day"><div class="sg-day-hd" onclick="togDay(\u0027'+j+'\u0027)"><i class="ti ti-chevron-'+(isOpen?'down':'right')+'" id="chev-'+j+'"></i><span>'+j+' ('+groups[j].length+')</span></div><div class="sg-day-body" id="day-'+j+'" style="display:'+(isOpen?'block':'none')+';">';
-    groups[j].forEach(([id,s])=>{
-      html+='<div class="si'+(cid===id?' act':'')+'" onclick="selS(\u0027'+id+'\u0027)"><div class="av" style="background:'+avc(id)+'22;color:'+avc(id)+'">'+gi(s)+'</div><div style="overflow:hidden;flex:1;"><div class="sn">'+s.prenom+' '+(s.nom||'')+'</div><div class="sm">'+((s.instruments||[]).slice(0,2).join(', '))+'</div></div>'+(ids.has(id)?'<div class="udot"></div>':'')+'</div>';
-    });
-    html+='</div></div>';
+    // Tri du jour : cours le plus tôt en premier, puis prénom
+    groups[j].sort(([,a],[,b])=>heureJour(a,j).localeCompare(heureJour(b,j))||(a.prenom||'').localeCompare(b.prenom||''));
+    html+=jourHTML(j,j,groups[j]);
   });
-  if(groups['__none__']&&groups['__none__'].length){
-    const isOpen=(cid&&groups['__none__'].find(([i])=>i===cid))||false;
-    html+='<div class="sg-day"><div class="sg-day-hd" onclick="togDay(\u0027__none__\u0027)"><i class="ti ti-chevron-'+(isOpen?'down':'right')+'" id="chev-__none__"></i><span>Sans créneau ('+groups['__none__'].length+')</span></div><div class="sg-day-body" id="day-__none__" style="display:'+(isOpen?'block':'none')+';">';
-    groups['__none__'].forEach(([id,s])=>{
-      html+='<div class="si'+(cid===id?' act':'')+'" onclick="selS(\u0027'+id+'\u0027)"><div class="av" style="background:'+avc(id)+'22;color:'+avc(id)+'">'+gi(s)+'</div><div style="overflow:hidden;flex:1;"><div class="sn">'+s.prenom+' '+(s.nom||'')+'</div><div class="sm">'+((s.instruments||[]).slice(0,2).join(', '))+'</div></div>'+(ids.has(id)?'<div class="udot"></div>':'')+'</div>';
-    });
-    html+='</div></div>';
-  }
+  if(groups['__none__']&&groups['__none__'].length)html+=jourHTML('__none__','Sans créneau',groups['__none__']);
   document.getElementById('sl').innerHTML=html;
   updImpayes();
 }
@@ -603,8 +643,8 @@ window.togDay=j=>{
 };
 
 function renderListe(mc){
-  const e=sorted();
-  if(!e.length){mc.innerHTML='<div class="empty"><i class="ti ti-user-off"></i>Aucun élève.</div>';return;}
+  const e=recherche.trim()?resultatsRecherche():sorted();
+  if(!e.length){mc.innerHTML='<div class="empty"><i class="ti ti-user-off"></i>'+(recherche.trim()?'Aucun élève ne correspond à « '+recherche.replace(/</g,'&lt;')+' ».':'Aucun élève.')+'</div>';return;}
   const ids=new Set(getImpayes().map(x=>x.id));
   mc.innerHTML=e.map(([id,s])=>{
     const pr=(s.presences||[]).filter(p=>p.statut==='present').length,tot=(s.presences||[]).length;
@@ -1107,15 +1147,49 @@ function renderImp(mc){
   imp.map(({id,s,moisImpayes,forfaitImpayes,hi})=>{const col=avc(id);return'<div class="ir" onclick="selSP(\u0027'+id+'\u0027)"><div class="av" style="width:34px;height:34px;background:'+col+'22;color:'+col+'">'+gi(s)+'</div><div style="flex:1;"><div style="font-size:13px;font-weight:500;color:var(--bx3);">'+s.prenom+' '+s.nom+'</div><div style="font-size:11px;color:var(--txm);">'+((s.creneaux||[]).map(c=>c.type_creneau||'—').join(', ') || '—')+'</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">'+(hi?'<span class="mtag"><i class="ti ti-star" style="font-size:9px;"></i> Inscription</span>':'')+moisImpayes.map(x=>{const[y,mo]=x.mois.split('-');return'<span class="mtag">'+MS[parseInt(mo)-1]+' '+y+(x.reste<x.prixDu?' ('+x.reste+'€)':'')+'</span>';}).join('')+forfaitImpayes.map(x=>'<span class="mtag" style="background:'+x.f.impBg+';color:'+x.f.impTx+';">F.'+x.f.abbr+' n°'+x.tranche+'</span>').join('')+'</div></div><i class="ti ti-chevron-right" style="color:var(--cr3);"></i></div>';}).join('');
 }
 
+// Recettes encaissées par mois (date du paiement), tous élèves confondus, y compris les anciens élèves
+function tableauRecettes(){
+  const CAT=[['inscription','Inscriptions'],['abonnement','Abonnements'],['forfait','Forfaits'],['autre','Autres']];
+  const parMois={},parMode={},modes=[...MODES];
+  for(const s of Object.values(DB)){
+    for(const p of (s.paiements||[])){
+      const m=Number(p.montant)||0;if(!m||!p.date)continue;
+      const k=mk(p.date);
+      const cat=p.type==='inscription'?'inscription':p.type==='forfait'?'forfait':estPaiementMensuel(p)?'abonnement':'autre';
+      if(!parMois[k])parMois[k]={inscription:0,abonnement:0,forfait:0,autre:0};
+      parMois[k][cat]+=m;
+      const mo=modes.includes(p.mode)?p.mode:'Autre';if(!modes.includes(mo))modes.push(mo);
+      if(!parMode[k])parMode[k]={};parMode[k][mo]=(parMode[k][mo]||0)+m;
+    }
+  }
+  const mois=[...new Set([...ANNEE_MOIS,...Object.keys(parMois)])].sort();
+  const cell=v=>'<td'+(v?'':' class="z"')+'>'+(v?fmtE(v)+' €':'—')+'</td>';
+  const nomMois=k=>{const[y,m]=k.split('-');return MN[parseInt(m)-1]+' '+y;};
+  // tableau par type
+  const tot={inscription:0,abonnement:0,forfait:0,autre:0};let totG=0;
+  let rows=mois.map(k=>{const d=parMois[k]||{};let t=0;const tds=CAT.map(([c])=>{const v=d[c]||0;tot[c]+=v;t+=v;return cell(v);}).join('');totG+=t;return'<tr><td>'+nomMois(k)+'</td>'+tds+'<td style="font-weight:500;color:var(--bx3);">'+(t?fmtE(t)+' €':'—')+'</td></tr>';}).join('');
+  rows+='<tr class="tot"><td>Total</td>'+CAT.map(([c])=>'<td>'+fmtE(tot[c])+' €</td>').join('')+'<td>'+fmtE(totG)+' €</td></tr>';
+  // tableau par mode de paiement
+  const modesUtil=modes.filter(mo=>mois.some(k=>parMode[k]&&parMode[k][mo]));
+  const totM={};
+  let rowsM=mois.map(k=>{const d=parMode[k]||{};let t=0;return'<tr><td>'+nomMois(k)+'</td>'+modesUtil.map(mo=>{const v=d[mo]||0;totM[mo]=(totM[mo]||0)+v;t+=v;return cell(v);}).join('')+'<td style="font-weight:500;color:var(--bx3);">'+(t?fmtE(t)+' €':'—')+'</td></tr>';}).join('');
+  rowsM+='<tr class="tot"><td>Total</td>'+modesUtil.map(mo=>'<td>'+fmtE(totM[mo]||0)+' €</td>').join('')+'<td>'+fmtE(totG)+' €</td></tr>';
+  return'<div class="blk"><div class="bh"><i class="ti ti-report-money" style="color:var(--bx);"></i><span class="bht">Recettes par mois</span><span style="margin-left:auto;font-size:10px;color:var(--txm);">selon la date d\u0027encaissement, anciens élèves compris</span></div><div class="bb rtw">'+
+  '<table class="rt"><tr><th>Mois</th>'+CAT.map(([,l])=>'<th>'+l+'</th>').join('')+'<th>Total</th></tr>'+rows+'</table></div></div>'+
+  (modesUtil.length?'<div class="blk"><div class="bh"><i class="ti ti-cash" style="color:var(--bx);"></i><span class="bht">Recettes par mode de paiement</span></div><div class="bb rtw">'+
+  '<table class="rt"><tr><th>Mois</th>'+modesUtil.map(mo=>'<th>'+mo+'</th>').join('')+'<th>Total</th></tr>'+rowsM+'</table></div></div>':'');
+}
 function renderStats(mc){
   const e=sorted();const tot=e.length;
   const tp=e.reduce((a,[,s])=>a+(s.paiements||[]).reduce((b,p)=>b+p.montant,0),0);
   const taux=tot?Math.round(e.reduce((a,[,s])=>{const t=(s.presences||[]).length;return t?a+(s.presences.filter(p=>p.statut==='present').length/t):a;},0)/tot*100):0;
   const imp=getImpayes();
   const iC={};e.forEach(([,s])=>(s.instruments||[]).forEach(i=>iC[i]=(iC[i]||0)+1));
+  const recettes=tableauRecettes();
   mc.innerHTML=(imp.length?'<div class="bann" onclick="showV(\u0027impayes\u0027)"><div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;"><i class="ti ti-alert-circle" style="font-size:18px;color:#fca5a5;"></i></div><div style="flex:1;"><div style="font-family:var(--fd);font-size:13px;color:#fff;font-weight:500;">'+imp.length+' élève'+(imp.length>1?'s':'')+' avec des impayés</div><div style="font-size:10px;color:rgba(255,255,255,.6);">Cliquez pour voir</div></div><i class="ti ti-chevron-right" style="color:rgba(255,255,255,.5);"></i></div>':'')+
   '<div class="sg"><div class="stat"><div class="sv">'+tot+'</div><div class="sl3">Élèves</div></div><div class="stat"><div class="sv">'+tp+' €</div><div class="sl3">Total encaissé</div></div><div class="stat"><div class="sv">'+taux+'%</div><div class="sl3">Présence</div></div></div>'+
-  '<div class="blk"><div class="bh"><i class="ti ti-music" style="color:var(--bx);"></i><span class="bht">Instruments</span></div><div class="bb">'+Object.entries(iC).sort((a,b)=>b[1]-a[1]).map(([i,n])=>'<div style="display:flex;align-items:center;gap:9px;margin-bottom:7px;"><span style="font-size:12px;min-width:75px;">'+i+'</span><div style="flex:1;background:var(--cr2);border-radius:9px;height:7px;overflow:hidden;"><div style="width:'+(tot?Math.round(n/tot*100):0)+'%;background:var(--bx);height:100%;border-radius:9px;"></div></div><span style="font-size:11px;color:var(--txl);min-width:14px;text-align:right;">'+n+'</span></div>').join('')+'</div></div>';
+  '<div class="blk"><div class="bh"><i class="ti ti-music" style="color:var(--bx);"></i><span class="bht">Instruments</span></div><div class="bb">'+Object.entries(iC).sort((a,b)=>b[1]-a[1]).map(([i,n])=>'<div style="display:flex;align-items:center;gap:9px;margin-bottom:7px;"><span style="font-size:12px;min-width:75px;">'+i+'</span><div style="flex:1;background:var(--cr2);border-radius:9px;height:7px;overflow:hidden;"><div style="width:'+(tot?Math.round(n/tot*100):0)+'%;background:var(--bx);height:100%;border-radius:9px;"></div></div><span style="font-size:11px;color:var(--txl);min-width:14px;text-align:right;">'+n+'</span></div>').join('')+'</div></div>'+
+  recettes;
 }
 
 // ── ACTIONS ──
@@ -1288,6 +1362,90 @@ function exportVCF(id){
   toast('Contact exporté !');
 }
 window.exportVCF=exportVCF;
+
+// ── SMS GROUPÉS : fichier lu par le programme Mac (outils/envoyer_sms.command) ──
+const SCRIPT_MAC="#!/bin/bash\n# Envoi des SMS préparés par le site de l'Ecole de Musique de Ceyreste,\n# depuis l'application Messages du Mac (les SMS partent de votre iPhone/forfait).\n#\n# Utilisation : double-clic, ou dans le Terminal :  bash envoyer_sms.command [fichier.tsv]\n# Sans fichier indiqué, prend le dernier « sms_a_envoyer….tsv » du dossier Téléchargements.\n# Format du fichier (une ligne par SMS) : numéro <tab> nom <tab> message\n\nFICHIER=\"${1:-}\"\nif [ -z \"$FICHIER\" ]; then\n  FICHIER=$(ls -t \"$HOME/Downloads\"/sms_a_envoyer*.tsv 2>/dev/null | head -1)\nfi\nif [ ! -f \"$FICHIER\" ]; then\n  echo \"Aucun fichier sms_a_envoyer….tsv trouvé dans Téléchargements.\"\n  echo \"Préparez-le d'abord depuis le site (bouton « SMS groupés »).\"\n  read -r -p \"Appuyez sur Entrée pour fermer.\" _\n  exit 1\nfi\n\nN=$(grep -c . \"$FICHIER\")\necho \"Fichier : $FICHIER\"\necho \"$N SMS à envoyer :\"\necho\nwhile IFS=$'\\t' read -r num nom msg; do\n  [ -n \"$num\" ] && printf '  %-14s %s\\n' \"$num\" \"$nom\"\ndone < \"$FICHIER\"\necho\nprintf 'Exemple de message :\\n  %s\\n\\n' \"$(head -1 \"$FICHIER\" | cut -f3-)\"\nif [ \"${ENVOI_CONFIRME:-}\" != \"oui\" ]; then\n  read -r -p \"Envoyer ces $N SMS maintenant ? Tapez oui pour confirmer : \" rep\n  if [ \"$rep\" != \"oui\" ]; then echo \"Annulé : rien n'a été envoyé.\"; exit 0; fi\nfi\n\nok=0; ko=0\nJOURNAL=\"${FICHIER%.tsv}_journal.txt\"\nwhile IFS=$'\\t' read -r num nom msg; do\n  [ -z \"$num\" ] && continue\n  if osascript - \"$num\" \"$msg\" >/dev/null 2>&1 <<'APPLESCRIPT'\non run argv\n\tset num to item 1 of argv\n\tset msg to item 2 of argv\n\ttell application \"Messages\"\n\t\ttry\n\t\t\tset svc to 1st account whose service type = SMS\n\t\t\tsend msg to participant num of svc\n\t\ton error\n\t\t\ttry\n\t\t\t\tset svc to 1st account whose service type = iMessage\n\t\t\t\tsend msg to participant num of svc\n\t\t\ton error\n\t\t\t\tset svc to 1st service whose service type = iMessage\n\t\t\t\tsend msg to buddy num of svc\n\t\t\tend try\n\t\tend try\n\tend tell\nend run\nAPPLESCRIPT\n  then ok=$((ok+1)); echo \"✓ $num  $nom\" | tee -a \"$JOURNAL\"\n  else ko=$((ko+1)); echo \"✗ $num  $nom  (échec)\" | tee -a \"$JOURNAL\"\n  fi\n  sleep 1\ndone < \"$FICHIER\"\n\necho\necho \"Terminé : $ok envoyé(s), $ko échec(s). Journal : $JOURNAL\"\n[ \"${ENVOI_CONFIRME:-}\" = \"oui\" ] || read -r -p \"Appuyez sur Entrée pour fermer.\" _\n";
+// 06 12 34 56 78 → +33612345678
+function numInter(t){
+  let d=String(t||'').replace(/[^\d+]/g,'');
+  if(d.startsWith('00'))d='+'+d.slice(2);
+  if(/^0\d{9}$/.test(d))d='+33'+d.slice(1);
+  else if(/^33\d{9}$/.test(d))d='+'+d;
+  return d.length>=10?d:'';
+}
+// Numéros à prévenir : parents en priorité, sinon le musicien
+function numsFamille(s){const p=[s.tel_maman,s.tel_papa].map(numInter).filter(Boolean);return[...new Set(p.length?p:[numInter(s.tel_musicien)].filter(Boolean))];}
+function msgRappel(x){
+  const s=x.s,el=[];
+  if(x.hi)el.push("les frais d'inscription");
+  if(x.moisImpayes.length)el.push(x.moisImpayes.map(m=>{const[y,mo]=m.mois.split('-');return MN[parseInt(mo)-1].toLowerCase()+' '+y;}).join(', '));
+  if(x.forfaitImpayes.length)el.push(x.forfaitImpayes.length+' forfait'+(x.forfaitImpayes.length>1?'s':''));
+  return"Bonjour, c'est Audrey de l'Ecole de Musique de Ceyreste. Nous vous contactons au sujet du règlement de "+s.prenom+" "+s.nom+(el.length?" pour : "+el.join(', ')+".":".")+" Merci de régulariser dès que possible. À très bientôt 🎵";
+}
+function smsAPreparer(){
+  const mode=(document.querySelector('input[name="sg-mode"]:checked')||{}).value||'impayes';
+  const jour=(document.getElementById('sg-jour')||{}).value||'';
+  const libre=((document.getElementById('sg-msg')||{}).value||'').trim();
+  const lignes=[],vus=new Set();let sansNum=[];
+  if(mode==='impayes'){
+    for(const x of getImpayes()){
+      if(jour&&!(x.s.creneaux||[]).some(c=>c.jour===jour))continue;
+      const nums=numsFamille(x.s);if(!nums.length){sansNum.push(x.s.prenom+' '+x.s.nom);continue;}
+      const msg=msgRappel(x);
+      nums.forEach(n=>lignes.push({num:n,nom:x.s.prenom+' '+x.s.nom,msg}));
+    }
+  } else {
+    if(!libre)return{lignes:[],sansNum:[],erreur:'Écrivez le message à envoyer.'};
+    for(const [,s] of sorted()){
+      if(jour&&!(s.creneaux||[]).some(c=>c.jour===jour))continue;
+      const nums=numsFamille(s);if(!nums.length){sansNum.push(s.prenom+' '+s.nom);continue;}
+      // une famille avec plusieurs enfants ne reçoit le message qu'une fois
+      nums.forEach(n=>{if(vus.has(n))return;vus.add(n);lignes.push({num:n,nom:s.prenom+' '+s.nom,msg:libre});});
+    }
+  }
+  return{lignes,sansNum};
+}
+window.majApercuSMS=()=>{
+  const mode=(document.querySelector('input[name="sg-mode"]:checked')||{}).value||'impayes';
+  const zm=document.getElementById('sg-libre');if(zm)zm.style.display=mode==='libre'?'block':'none';
+  const {lignes,sansNum,erreur}=smsAPreparer();
+  const el=document.getElementById('sg-apercu');if(!el)return;
+  if(erreur){el.innerHTML='<span style="color:#B45309;">'+erreur+'</span>';return;}
+  el.innerHTML='<b>'+lignes.length+' SMS</b> vers '+new Set(lignes.map(l=>l.num)).size+' numéro(s).'+
+  (sansNum.length?'<div style="color:#B45309;margin-top:4px;">Sans numéro de téléphone : '+sansNum.join(', ')+'</div>':'')+
+  (lignes.length?'<div style="margin-top:8px;max-height:150px;overflow-y:auto;background:var(--bgs);border:1px solid var(--cr2);border-radius:var(--rad3);padding:6px 8px;">'+lignes.map(l=>'<div style="padding:3px 0;border-bottom:1px solid var(--cr2);"><b>'+l.nom+'</b> · '+l.num+'<div style="color:var(--txm);">'+l.msg.replace(/</g,'&lt;')+'</div></div>').join('')+'</div>':'');
+};
+function telecharger(nom,contenu,type){
+  const url=URL.createObjectURL(new Blob([contenu],{type:type||'text/plain;charset=utf-8'}));
+  const a=document.createElement('a');a.href=url;a.download=nom;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+window.telechargerSMS=()=>{
+  const {lignes,erreur}=smsAPreparer();
+  if(erreur){toast(erreur,true);return;}
+  if(!lignes.length){toast('Aucun SMS à envoyer',true);return;}
+  const propre=t=>String(t).replace(/[\t\r\n]+/g,' ').trim();
+  const d=new Date(),pad=n=>String(n).padStart(2,'0');
+  const nom='sms_a_envoyer_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())+'.tsv';
+  telecharger(nom,lignes.map(l=>propre(l.num)+'\t'+propre(l.nom)+'\t'+propre(l.msg)).join('\n')+'\n','text/tab-separated-values;charset=utf-8');
+  toast('Fichier prêt : '+lignes.length+' SMS');
+};
+window.telechargerScriptMac=()=>telecharger('envoyer_sms.command',SCRIPT_MAC,'application/octet-stream');
+window.openSMSGroupes=()=>{
+  document.getElementById('mi').innerHTML=
+  '<div class="mo-t"><i class="ti ti-messages" style="color:var(--bx)"></i> SMS groupés</div>'+
+  '<div style="font-size:12px;display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">'+
+  '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="sg-mode" value="impayes" checked onchange="majApercuSMS()"> Rappel de paiement aux familles avec impayés</label>'+
+  '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="sg-mode" value="libre" onchange="majApercuSMS()"> Message libre à toutes les familles (élèves actifs)</label></div>'+
+  '<div class="field"><label>Élèves du</label><select id="sg-jour" onchange="majApercuSMS()"><option value="">Tous les jours</option>'+JOURS.map(j=>'<option>'+j+'</option>').join('')+'</select></div>'+
+  '<div class="field" id="sg-libre" style="display:none;"><label>Message</label><textarea id="sg-msg" oninput="majApercuSMS()" placeholder="Bonjour, c\u0027est Audrey de l\u0027Ecole de Musique de Ceyreste. …"></textarea></div>'+
+  '<div id="sg-apercu" style="font-size:12px;margin:8px 0;"></div>'+
+  '<div style="font-size:11px;color:var(--txm);background:#EBF5FF;border:1px solid #BFDBFE;border-radius:var(--rad3);padding:8px 10px;margin-bottom:10px;line-height:1.5;"><i class="ti ti-info-circle"></i> Le fichier se télécharge dans <b>Téléchargements</b>. Les SMS partent ensuite de votre Mac (application Messages) avec le programme <b>envoyer_sms.command</b>, qui demande confirmation avant d\u0027envoyer.</div>'+
+  '<div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;"><button class="btn btn-sm" onclick="telechargerScriptMac()"><i class="ti ti-download"></i> Programme Mac</button>'+
+  '<div style="display:flex;gap:8px;"><button class="btn btn-sm" onclick="closeM()">Fermer</button><button class="btn btn-p btn-sm" onclick="telechargerSMS()"><i class="ti ti-file-download"></i> Préparer le fichier d\u0027envoi</button></div></div>';
+  document.getElementById('mw').classList.add('op');
+  majApercuSMS();
+};
 
 // ── SMS ──
 function getNums(s){
